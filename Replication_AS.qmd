@@ -1,0 +1,330 @@
+---
+title: "PHP1511_Final_Project_Replication"
+author: "Audrey Su"
+format: html
+editor: visual
+---
+
+```{r setup, include=FALSE}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(message=FALSE, 
+                      warning=FALSE, 
+                      error=FALSE, 
+                      echo = FALSE,
+                      paged.print=TRUE)
+```
+
+## Fig. 1 - Distribution of finish times, male marathoners
+
+Fig. 3 - Estimated PM2.5
+
+```{r}
+# libraries
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(scales)
+library(purrr)
+
+# setwd("C:/Users/audr2/Documents/PHP1511/Final_Project") #for me
+df <- read_csv("Results.csv")
+
+# twin cities marathon was not held in 2023; replaced with honolulu marathon, one of the biggest from races.csv (#5)
+# also this rationale: https://info.runsignup.com/2024/01/12/2023-top-100-largest-races/ - data about the signup rates for each major race, see that honolulu was pretty high
+major_marathons <- c("Boston Marathon", "Philadelphia Marathon", "Honolulu Marathon", "Grandma's Marathon", "Chicago Marathon", "NYC Marathon", "Marine Corps Marathon", "Houston Marathon", "LA Marathon")
+
+df_major <- df %>%
+  filter(Race %in% major_marathons)
+
+# filter = male
+df_male <- df_major %>%
+  filter(Gender == "M")
+
+# calculate percentiles
+get_percentiles <- function(data) {
+  p <- quantile(data$Finish, probs = c(0.01, 0.25, 0.5, 0.75), na.rm = TRUE)
+  data.frame(
+    Race = unique(data$Race),
+    Percentile = c("1st", "25th", "50th", "75th"),
+    Time_sec = as.numeric(p)
+  )
+}
+
+get_percentiles <- function(data) {
+  # Only proceed if data exists + valid Race value
+  if (nrow(data) == 0 || all(is.na(data$Race))) {
+    return(NULL)
+  }
+
+  p <- quantile(data$Finish, probs = c(0.01, 0.25, 0.5, 0.75), na.rm = TRUE)
+
+  data.frame(
+    Race = rep(unique(na.omit(data$Race))[1], 4),  # Repeat the race name for all percentiles
+    Percentile = c("1st", "25th", "50th", "75th"),
+    Time_sec = as.numeric(p)
+  )
+}
+
+percentiles <- df_male %>%
+  group_split(Race) %>%
+  map_df(get_percentiles)
+
+race_counts <- df_male %>%
+  group_by(Race) %>%
+  summarise(n = n(), .groups = "drop")
+
+percentiles <- percentiles %>%
+  left_join(race_counts, by = "Race") %>%
+  mutate(Race_label = paste0(Race, "\n(n = ", n, ")"))
+
+
+format_time <- function(seconds) {
+  seconds <- as.integer(round(seconds))  # round and convert to integer
+  h <- seconds %/% 3600
+  m <- (seconds %% 3600) %/% 60
+  s <- seconds %% 60
+  sprintf("%02d:%02d:%02d", h, m, s)
+}
+
+# this part will mess up if you run the code block below (for graph) with it, keep here
+df_male <- df_male %>%
+  left_join(race_counts, by = "Race") %>%
+  mutate(Race_label = paste0(Race, "\n(n = ", n, ")"))
+```
+
+```{r}
+
+### FIG. 1 - DISTRIBUTION OF FINISH TIMES, MALE MARATHONERS, 2023
+
+# alternating y-positions for label placement
+# 0.0004 diff
+percentiles <- percentiles %>%
+  mutate(
+    label = format_time(Time_sec),
+    y = rep(c(0.00020, 0.00016, 0.00020, 0.00016), length.out = n())  # alternate positions
+  )
+
+# plot time
+ggplot(df_male, aes(x = Finish)) +
+  geom_density(color = "black", size = 1) +
+  facet_wrap(~Race_label, ncol = 3, scales = "fixed") +
+  geom_vline(
+    data = percentiles,
+    aes(xintercept = Time_sec, linetype = Percentile),
+    color = "grey47",
+    show.legend = TRUE
+  ) +
+  geom_label(
+    data = percentiles,
+    aes(x = Time_sec, y = y, label = label),
+    fill = "white",
+    color = "grey47",
+    size = 3,
+    label.size = 0.2,
+    label.padding = unit(0.2, "lines"),
+    inherit.aes = FALSE
+  ) +
+  scale_linetype_manual(values = c("dotted", "dotted", "dotted", "dotted")) +
+  scale_x_continuous(
+    limits = c(7200, 28800),
+    breaks = c(7200, 14400, 21600, 28800),
+    labels = format_time
+  ) +
+  labs(
+    title = "Distribution of Finish Times for Male Marathoners",
+    x = "Finish Time (HH:MM:SS)", y = NULL
+  ) +
+ theme_bw() +
+  theme(
+    legend.position = "bottom",
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_text(size = 10),
+    strip.text = element_text(size = 14),
+    panel.spacing = unit(1.5, "lines")
+  )
+
+
+ggsave("male_finish_distributions.png", width = 12, height = 10, dpi = 300)
+
+```
+
+## Fig. 2 - Distribution of finish times, female marathoners
+
+```{r}
+# separate block to avoid issues for df_female
+
+# filter = female only
+df_female <- df_major %>%
+  filter(Gender == "F")
+
+df_female <- df_female %>%
+  left_join(race_counts, by = "Race") %>%
+  mutate(Race_label = paste0(Race, "\n(n = ", n, ")"))
+```
+
+```{r}
+### FIG. 2 - DISTRIBUTION OF FINISH TIMES, FEMALE MARATHONERS, 2023
+
+# percentiles for female runners
+percentiles_female <- df_female %>%
+  group_split(Race) %>%
+  map_df(get_percentiles)
+
+# join race counts, race labels for females
+percentiles_female <- percentiles_female %>%
+  left_join(race_counts, by = "Race") %>%
+  mutate(Race_label = paste0(Race, "\n(n = ", n, ")"))
+
+# alternating y-positions for labels
+percentiles_female <- percentiles_female %>%
+  mutate(
+    label = format_time(Time_sec),
+    y = rep(c(0.00020, 0.00016, 0.00020, 0.00016), length.out = n())
+  )
+
+
+# plot time
+ggplot(df_female, aes(x = Finish)) +
+  geom_density(color = "black", size = 1) +
+  facet_wrap(~Race_label, ncol = 3, scales = "fixed") +
+  geom_vline(
+    data = percentiles_female,
+    aes(xintercept = Time_sec, linetype = Percentile),
+    color = "grey47",
+    show.legend = TRUE
+  ) +
+  geom_label(
+    data = percentiles_female,
+    aes(x = Time_sec, y = y, label = label),
+    fill = "white",
+    color = "grey47",
+    size = 3,
+    label.size = 0.2,
+    label.padding = unit(0.2, "lines"),
+    inherit.aes = FALSE
+  ) +
+  scale_linetype_manual(values = c("dotted", "dotted", "dotted", "dotted")) +
+  scale_x_continuous(
+    limits = c(7200, 28800),
+    breaks = c(7200, 14400, 21600, 28800),
+    labels = format_time
+  ) +
+  labs(
+    title = "Distribution of Finish Times for Female Marathoners",
+    x = "Finish Time (HH:MM:SS)", y = NULL
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_text(size = 10),
+    strip.text = element_text(size = 14),
+    panel.spacing = unit(1.5, "lines")
+  )
+
+ggsave("female_finish_distributions.png", width = 12, height = 10, dpi = 300)
+```
+
+it's time to do figure 3, but we need heat index so we're going to change 88101 to include heat index (in celsius)
+
+```{r}
+# from 88101
+df1 <- read.csv("88101.csv")
+
+# HI formula: https://www.wpc.ncep.noaa.gov/html/heatindex_equation.shtml 
+
+calculate_heat_index <- function(T_C, RH) {
+  # F
+  T_F <- T_C * 9/5 + 32
+  
+  # simple
+  HI_simple <- 0.5 * (T_F + 61.0 + ((T_F - 68.0) * 1.2) + (RH * 0.094))
+  HI_avg <- (HI_simple + T_F) / 2
+  
+  # avg < 80F then use simple
+  if (HI_avg < 80) {
+    return((HI_avg - 32) * 5/9)
+  }
+  
+  # otherwise, Rothfusz
+  HI <- -42.379 +
+    2.04901523 * T_F +
+    10.14333127 * RH -
+    0.22475541 * T_F * RH -
+    0.00683783 * T_F^2 -
+    0.05481717 * RH^2 +
+    0.00122874 * T_F^2 * RH +
+    0.00085282 * T_F * RH^2 -
+    0.00000199 * T_F^2 * RH^2
+  
+  # adjustment for low RH / high T
+  if (RH < 13 && T_F >= 80 && T_F <= 112) {
+    adjustment <- ((13 - RH) / 4) * sqrt((17 - abs(T_F - 95)) / 17)
+    HI <- HI - adjustment
+  }
+  
+  # adjustment for high RH / low T
+  if (RH > 85 && T_F >= 80 && T_F <= 87) {
+    adjustment <- ((RH - 85) / 10) * ((87 - T_F) / 5)
+    HI <- HI + adjustment
+  }
+  
+  # Convert back to Celsius
+  return((HI - 32) * 5/9)
+}
+
+df1$HeatIndex_C <- mapply(calculate_heat_index, df1$T2M, df1$RH2M)
+
+write.csv(df1, "88101_HI.csv", row.names = FALSE)
+```
+
+graph time
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(scales)
+
+marathon_order <- c("Boston Marathon", "Philadelphia Marathon", "Honolulu Marathon", 
+                    "Grandma's Marathon", "Chicago Marathon", "NYC Marathon", 
+                    "Marine Corps Marathon", "Houston Marathon", "LA Marathon")
+
+df1 <- df1 %>%
+  filter(!is.na(Race))
+
+df1$Race <- droplevels(factor(df1$Race), levels = marathon_order)
+
+# Plot
+ggplot(df1, aes(x = Race, y = mean_pm25, fill = HeatIndex_C)) +
+  geom_col(color = "black", width = 0.7) +
+  scale_fill_gradientn(colors = c("#0000FF", "#FF0000"), 
+                       name = "Heat Index (°C)",
+                       limits = c(min(df1$HeatIndex_C, na.rm = TRUE), 
+                                  max(df1$HeatIndex_C, na.rm = TRUE)),
+                       oob = scales::squish) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Mean PM2.5 by Marathon with Heat Index",
+    x = "Marathon",
+    y = expression("Mean PM"[2.5]*" (µg/m³)")
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  )
+
+ggsave("mean_pm2.5_by_marathon.png", width = 12, height = 10, dpi = 300)
+```
+
+```{r ref.label = knitr::all_labels()}
+#| echo: true
+#| eval: false
+```
